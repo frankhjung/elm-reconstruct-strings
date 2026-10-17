@@ -1,0 +1,19 @@
+{
+  "name": "reconstruct-strings",
+  "version": "1.0.0",
+  "description": "Interactive OLC sequence assembler in Elm",
+  "private": true,
+  "scripts": {
+    "test": "elm-test",
+    "format": "elm-format --yes src tests",
+    "format:validate": "elm-format --validate src tests",
+    "review": "elm-review"
+  },
+  "devDependencies": {
+    "elm": "^0.19.1-6",
+    "elm-format": "^0.8.7",
+    "elm-review": "^2.13.1",
+    "elm-test": "^0.19.1-revision12",
+    "terser": "^5.39.0"
+  }
+}
