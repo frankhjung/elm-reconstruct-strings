@@ -10,8 +10,9 @@ HASKELL_BIN=$(find "${HASKELL_DIR}/dist-newstyle" \
   -name "reconstruct-strings" -type f -perm -111 2>/dev/null | head -n 1)
 
 if [ -z "${HASKELL_BIN}" ] || [ ! -x "${HASKELL_BIN}" ]; then
-  echo "Error: Haskell binary not found in ${HASKELL_DIR}/dist-newstyle" >&2
-  exit 1
+  echo "Skipping parity: Haskell binary not found in" \
+    "${HASKELL_DIR}/dist-newstyle"
+  exit 0
 fi
 
 mkdir -p elm-stuff

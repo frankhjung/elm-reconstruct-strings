@@ -12,7 +12,7 @@ import Alignment
         , ContigAlignment
         , DiagnosticStatus(..)
         )
-import Html exposing (Html, div, h3, h4, span, text)
+import Html exposing (Html, div, h3, span, text)
 import Html.Attributes exposing (class, id)
 
 
@@ -46,11 +46,7 @@ viewDiff maybeReport source =
             Nothing ->
                 div [ class "diff-placeholder" ]
                     [ span [ class "placeholder-text" ]
-                        [ text
-                            ("Assembly in progress. Reference alignment will"
-                                ++ " display when reduction completes."
-                            )
-                        ]
+                        [ text "No fragments or sequence loaded to align." ]
                     ]
         ]
 
@@ -60,6 +56,12 @@ renderCompletedDiff report source =
     let
         ( statusText, statusClass, statusDesc ) =
             case report.diagnosticStatus of
+                InProgress ->
+                    ( "IN PROGRESS"
+                    , "status-in-progress"
+                    , "Showing fragment coverage of reference sequence."
+                    )
+
                 PerfectReconstruction ->
                     ( "PERFECT RECONSTRUCTION"
                     , "status-perfect"
@@ -88,14 +90,11 @@ renderCompletedDiff report source =
             List.length report.alignments + List.length report.unalignedContigs
     in
     div [ class "diff-content" ]
-        [ div [ class ("diagnostic-banner " ++ statusClass) ]
-            [ h4 [ class "diagnostic-title" ] [ text statusText ]
-            , span [ class "diagnostic-desc" ] [ text statusDesc ]
-            ]
-        , div [ class "metrics-grid" ]
-            [ div [ class "metric-card" ]
+        [ div [ class "metrics-grid" ]
+            [ div [ class ("metric-card " ++ statusClass) ]
                 [ span [ class "metric-label" ] [ text "Diagnostic Status" ]
                 , span [ class "metric-value" ] [ text statusText ]
+                , span [ class "metric-desc" ] [ text statusDesc ]
                 ]
             , div [ class "metric-card" ]
                 [ span [ class "metric-label" ] [ text "Sequence Coverage" ]
@@ -110,15 +109,28 @@ renderCompletedDiff report source =
             ]
         , div [ class "alignment-theatre" ]
             [ renderSourceRow source report
-            , div [ class "contigs-rows" ]
-                (List.indexedMap
-                    (renderContigRow source)
-                    report.alignments
-                )
+            , renderContigsSection report.alignments source
             , renderUnalignedSection report.unalignedContigs
             ]
         , renderLegend
         ]
+
+
+renderContigsSection : List ContigAlignment -> String -> Html msg
+renderContigsSection alignments source =
+    if List.isEmpty alignments then
+        div [ class "diff-row diff-row-empty" ]
+            [ span [ class "diff-row-label" ] [ text "Contigs" ]
+            , span [ class "diff-empty-note" ]
+                [ text "None reconstructed yet (assembly in progress)" ]
+            ]
+
+    else
+        div [ class "contigs-rows" ]
+            (List.indexedMap
+                (renderContigRow source)
+                alignments
+            )
 
 
 renderSourceRow : String -> AlignmentReport -> Html msg

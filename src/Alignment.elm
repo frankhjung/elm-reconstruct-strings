@@ -1,22 +1,25 @@
 module Alignment exposing
     ( DiagnosticStatus(..), Span, WindowMatch, ContigAlignment, AlignmentReport
     , findAllOccurrences, findBestWindow, calculateSpans, alignContigsToSource
+    , calculateFragmentCoverage
     )
 
 {-| Pure reference alignment, interval mathematics, and coverage diagnostics.
 
 @docs DiagnosticStatus, Span, WindowMatch, ContigAlignment, AlignmentReport
 @docs findAllOccurrences, findBestWindow, calculateSpans, alignContigsToSource
+@docs calculateFragmentCoverage
 
 -}
 
 import Set
 
 
-{-| Domain classification of the final assembly reconstruction outcome.
+{-| Domain classification of the assembly reconstruction outcome.
 -}
 type DiagnosticStatus
-    = PerfectReconstruction
+    = InProgress
+    | PerfectReconstruction
     | PartialAssembly
     | FragmentedAssembly
     | MisassemblyDetected
@@ -388,4 +391,100 @@ alignContigsToSource source contigs =
     , coveredSpans = spans.coveredSpans
     , uncoveredSpans = spans.uncoveredSpans
     , diagnosticStatus = diagnostic
+    }
+
+
+{-| Calculate reference sequence coverage provided by a pool of fragments.
+-}
+calculateFragmentCoverage : String -> List String -> AlignmentReport
+calculateFragmentCoverage source fragments =
+    let
+        sourceLen =
+            String.length source
+
+        coverFragment fragment accSet =
+            let
+                fragLen =
+                    String.length fragment
+
+                exactIndices =
+                    findAllOccurrences fragment source
+            in
+            if not (List.isEmpty exactIndices) then
+                List.foldl
+                    (\idx s ->
+                        List.range idx (idx + fragLen - 1)
+                            |> List.foldl Set.insert s
+                    )
+                    accSet
+                    exactIndices
+
+            else
+                let
+                    bestWindow =
+                        findBestWindow fragment source
+
+                    minThreshold =
+                        fragLen // 2
+                in
+                if bestWindow.matchCount >= minThreshold && fragLen > 0 then
+                    let
+                        sourceSlice =
+                            String.slice
+                                bestWindow.startIndex
+                                (bestWindow.startIndex + fragLen)
+                                source
+
+                        matchingPositions =
+                            List.map2
+                                (\charFrag ( charSource, pos ) ->
+                                    if charFrag == charSource then
+                                        Just pos
+
+                                    else
+                                        Nothing
+                                )
+                                (String.toList fragment)
+                                (List.map2 Tuple.pair
+                                    (String.toList sourceSlice)
+                                    (List.range
+                                        bestWindow.startIndex
+                                        (bestWindow.startIndex + fragLen - 1)
+                                    )
+                                )
+                                |> List.filterMap identity
+                    in
+                    List.foldl Set.insert accSet matchingPositions
+
+                else
+                    accSet
+
+        coveredSet =
+            List.foldl coverFragment Set.empty fragments
+
+        coveredPositions =
+            Set.toList coveredSet |> List.sort
+
+        coveragePercent =
+            if sourceLen == 0 then
+                0.0
+
+            else
+                (toFloat (List.length coveredPositions) / toFloat sourceLen)
+                    * 100.0
+
+        flags =
+            List.range 0 (sourceLen - 1)
+                |> List.map (\idx -> Set.member idx coveredSet)
+
+        spans =
+            calculateSpans flags
+    in
+    { alignments = []
+    , unalignedContigs = []
+    , coveredPositions = coveredPositions
+    , coveragePercent = coveragePercent
+    , coveredSpans = spans.coveredSpans
+    , uncoveredSpans = spans.uncoveredSpans
+    , diagnosticStatus = InProgress
     }

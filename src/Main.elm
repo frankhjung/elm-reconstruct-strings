@@ -17,7 +17,12 @@ module Main exposing
 
 -}
 
-import Alignment exposing (AlignmentReport, alignContigsToSource)
+import Alignment
+    exposing
+        ( AlignmentReport
+        , alignContigsToSource
+        , calculateFragmentCoverage
+        )
 import Array exposing (Array)
 import Assembler
     exposing
@@ -78,6 +83,7 @@ type alias FormState =
 type alias Model =
     { source : String
     , form : FormState
+    , fragments : List String
     , events : Array ReductionEvent
     , currentStepIndex : Int
     , isPlaying : Bool
@@ -169,14 +175,15 @@ init flagsValue =
                 |> Basics.min (Basics.max 0 (totalEvents - 1))
 
         report =
-            if targetStep >= totalEvents - 1 && totalEvents > 0 then
-                computeReport preset.source initialEvents targetStep
-
-            else
-                Nothing
+            computeReport
+                preset.source
+                defaultFragments
+                initialEvents
+                targetStep
     in
     ( { source = preset.source
       , form = formState
+      , fragments = defaultFragments
       , events = initialEvents
       , currentStepIndex = targetStep
       , isPlaying = False
@@ -221,20 +228,28 @@ computeEvents fragments minOverlap =
 
 computeReport :
     String
+    -> List String
     -> Array ReductionEvent
     -> Int
     -> Maybe AlignmentReport
-computeReport source events stepIdx =
-    Array.get stepIdx events
-        |> Maybe.andThen
-            (\evt ->
-                case evt of
-                    AssemblyCompleted data ->
-                        Just (alignContigsToSource source data.contigs)
+computeReport source fragments events stepIdx =
+    let
+        total =
+            Array.length events
+    in
+    if total == 0 then
+        Nothing
 
-                    _ ->
-                        Nothing
-            )
+    else if stepIdx >= total - 1 then
+        case Array.get stepIdx events of
+            Just (AssemblyCompleted data) ->
+                Just (alignContigsToSource source data.contigs)
+
+            _ ->
+                Just (calculateFragmentCoverage source fragments)
+
+    else
+        Just (calculateFragmentCoverage source fragments)
 
 
 {-| The Elm Architecture update reducer.
@@ -252,10 +267,18 @@ update msg model =
 
                 newRaw =
                     { oldRaw | source = newSrc }
+
+                newReport =
+                    computeReport
+                        newSrc
+                        model.fragments
+                        model.events
+                        model.currentStepIndex
             in
             ( { model
                 | source = newSrc
                 , form = { oldForm | rawParams = newRaw }
+                , alignmentReport = newReport
               }
             , Cmd.none
             )
@@ -295,19 +318,13 @@ update msg model =
                         , validationErrors = errs
                     }
 
-                total =
-                    Array.length evts
-
                 report =
-                    if total > 0 then
-                        computeReport preset.source evts 0
-
-                    else
-                        Nothing
+                    computeReport preset.source defaultFrags evts 0
             in
             ( { model
                 | source = preset.source
                 , form = newForm
+                , fragments = defaultFrags
                 , events = evts
                 , currentStepIndex = 0
                 , isPlaying = False
@@ -343,6 +360,7 @@ update msg model =
                 Err errs ->
                     ( { model
                         | isPlaying = False
+                        , fragments = []
                         , events = Array.empty
                         , currentStepIndex = 0
                         , alignmentReport = Nothing
@@ -373,13 +391,17 @@ update msg model =
                         | customFragmentsText = String.join "\n" fragments
                         , validationErrors = errs
                     }
+
+                report =
+                    computeReport model.source fragments evts 0
             in
             ( { model
-                | events = evts
+                | fragments = fragments
+                , events = evts
                 , currentStepIndex = 0
                 , isPlaying = False
                 , cumulativeRemoved = rem
-                , alignmentReport = Nothing
+                , alignmentReport = report
                 , form = newForm
               }
             , Cmd.none
@@ -415,12 +437,21 @@ update msg model =
                     in
                     case computeEvents fragments n of
                         Ok ( evts, rem ) ->
+                            let
+                                report =
+                                    computeReport
+                                        model.source
+                                        fragments
+                                        evts
+                                        0
+                            in
                             ( { model
-                                | events = evts
+                                | fragments = fragments
+                                , events = evts
                                 , currentStepIndex = 0
                                 , isPlaying = False
                                 , cumulativeRemoved = rem
-                                , alignmentReport = Nothing
+                                , alignmentReport = report
                                 , form = setErrors [] model.form
                               }
                             , Cmd.none
@@ -459,16 +490,18 @@ update msg model =
 
                 newPlaying =
                     not model.isPlaying
+
+                report =
+                    computeReport
+                        model.source
+                        model.fragments
+                        model.events
+                        newIndex
             in
             ( { model
                 | isPlaying = newPlaying
                 , currentStepIndex = newIndex
-                , alignmentReport =
-                    if newPlaying then
-                        Nothing
-
-                    else
-                        model.alignmentReport
+                , alignmentReport = report
               }
             , Cmd.none
             )
@@ -487,7 +520,11 @@ update msg model =
                         Basics.max 0 (total - 1)
 
                     report =
-                        computeReport model.source model.events finalIndex
+                        computeReport
+                            model.source
+                            model.fragments
+                            model.events
+                            finalIndex
                 in
                 ( { model
                     | currentStepIndex = finalIndex
@@ -498,10 +535,7 @@ update msg model =
                 )
 
             else
-                ( { model
-                    | currentStepIndex = nextIndex
-                    , alignmentReport = Nothing
-                  }
+                ( { model | currentStepIndex = nextIndex }
                 , Cmd.none
                 )
 
@@ -514,11 +548,11 @@ update msg model =
                     Basics.min (total - 1) (model.currentStepIndex + 1)
 
                 report =
-                    if nextIndex >= total - 1 && total > 0 then
-                        computeReport model.source model.events nextIndex
-
-                    else
-                        Nothing
+                    computeReport
+                        model.source
+                        model.fragments
+                        model.events
+                        nextIndex
             in
             ( { model
                 | currentStepIndex = nextIndex
@@ -532,11 +566,18 @@ update msg model =
             let
                 prevIndex =
                     Basics.max 0 (model.currentStepIndex - 1)
+
+                report =
+                    computeReport
+                        model.source
+                        model.fragments
+                        model.events
+                        prevIndex
             in
             ( { model
                 | currentStepIndex = prevIndex
                 , isPlaying = False
-                , alignmentReport = Nothing
+                , alignmentReport = report
               }
             , Cmd.none
             )
@@ -550,11 +591,11 @@ update msg model =
                     Basics.max 0 (Basics.min (total - 1) idx)
 
                 report =
-                    if clampedIdx >= total - 1 && total > 0 then
-                        computeReport model.source model.events clampedIdx
-
-                    else
-                        Nothing
+                    computeReport
+                        model.source
+                        model.fragments
+                        model.events
+                        clampedIdx
             in
             ( { model
                 | currentStepIndex = clampedIdx
@@ -582,13 +623,17 @@ update msg model =
 
                         Err _ ->
                             ( model.events, model.cumulativeRemoved )
+
+                report =
+                    computeReport model.source defaultFrags evts 0
             in
             ( { model
-                | events = evts
+                | fragments = defaultFrags
+                , events = evts
                 , currentStepIndex = 0
                 , isPlaying = False
                 , cumulativeRemoved = rem
-                , alignmentReport = Nothing
+                , alignmentReport = report
               }
             , Cmd.none
             )

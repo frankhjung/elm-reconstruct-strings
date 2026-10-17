@@ -6,10 +6,8 @@ verification workbench implemented in [Elm 0.19.1](https://elm-lang.org/).
 The application provides deterministic, client-side assembly of biological and
 symbolic sequences from synthetic or user-defined fragment pools. It features
 real-time animation, step-by-step playback, sliding-window reference alignment,
-coverage metrics, and full differential parity verification against the Haskell
-reference implementation.
-
----
+dual coverage metrics (fragment and sequence coverage), and differential
+parity verification against the Haskell reference implementation.
 
 ## 1. Quick Start Guide
 
@@ -24,47 +22,51 @@ reference implementation.
 
 ### Available Make Targets
 
-The project workflows are orchestrated using GNU Make:
+Project workflows are orchestrated using GNU Make:
 
-| Target      | Description                                                |
-|-------------|------------------------------------------------------------|
-| `help`      | Display available targets and descriptions (default).      |
-| `deps`      | Install npm developer dependencies (`elm-test`, etc.).     |
-| `format`    | Automatically format Elm source, test, and review files.   |
+| Target      | Description                                                 |
+| ----------- | ----------------------------------------------------------- |
+| `default`   | Run all verification targets: format, check, lint, test,    |
+|             | and build (default goal).                                   |
+| `help`      | Show available targets with descriptions.                   |
+| `deps`      | Install npm development dependencies via `npm ci`.          |
+| `format`    | Automatically format Elm source, test, and review files.    |
 | `check`     | Validate Elm code formatting and type-check `src/Main.elm`. |
-| `lint`      | Run `elm-review` static analysis and dead-code rules.       |
-| `test`      | Execute unit and property fuzz tests with `elm-test`.      |
-| `build`     | Compile and minify production assets into `dist/`.          |
-| `run`       | Build and host production app at `http://localhost:8080`.  |
-| `parity`    | Run differential parity tests against Haskell binary.      |
-| `ci`        | Run full continuous integration suite (`check`, `test`).   |
-| `clean`     | Remove production build artefacts in `dist/`.               |
-| `distclean` | Remove build artefacts, caches, and `node_modules`.        |
+| `lint`      | Validate formatting and run `elm-review` static analysis.   |
+| `test`      | Execute unit and property fuzz tests with `elm-test`.       |
+| `build`     | Compile and minify optimised production bundle in `dist/`.  |
+| `run`       | Run local HTTP server on port `$(PORT)` (default: 8080).    |
+| `parity`    | Run differential parity tests against Haskell binary.       |
+| `ci`        | Run full CI pipeline validation (`lint test build parity`). |
+| `clean`     | Clean build artefacts and compiler caches.                  |
+| `distclean` | Clean all build artefacts, caches, and `node_modules`.      |
 
 ### Running the Application
 
 1. **Install dependencies**:
+
    ```bash
    make deps
    ```
 
 2. **Run verification suite**:
+
    ```bash
    make ci
    ```
 
 3. **Launch the local web server**:
+
    ```bash
    make run
    ```
+
    Open your browser to [http://localhost:8080](http://localhost:8080).
 
-4. **URL Deep Linking**:
-   Initialise specific presets and playback steps via URL query parameters:
+4. **URL Deep Linking**: Initialise specific presets and playback steps via URL
+   query parameters:
    - `http://localhost:8080/?preset=0&step=3` (Preset 0 at step 3)
    - `http://localhost:8080/?preset=2&step=0` (English Pangram at step 0)
-
----
 
 ## 2. Project Structure
 
@@ -73,9 +75,14 @@ reconstruct-strings/
 ├── .github/
 │   └── workflows/
 │       └── pages.yml              # GitHub Actions Pages deployment
+├── docs/
+│   └── REQ-001-interactive-olc-assembler.md # Detailed specification
+├── GLOSSARY.md                    # Authoritative domain terminology
+├── LICENSE                        # BSD-3-Clause license
 ├── Makefile                       # Canonical project workflow orchestration
 ├── elm.json                       # Elm 0.19.1 package configuration
 ├── package.json                   # Tooling dependencies (elm, terser, review)
+├── package-lock.json              # Deterministic npm dependency lockfile
 ├── review/
 │   ├── elm.json                   # Review dependencies
 │   └── src/
@@ -84,7 +91,7 @@ reconstruct-strings/
 │   ├── parity.js                  # Headless Node runner for ParityWorker
 │   └── parity.sh                  # Differential parity verification script
 ├── src/
-│   ├── Alignment.elm              # Reference alignment & coverage metrics
+│   ├── Alignment.elm              # Dual coverage metrics & reference align
 │   ├── Assembler.elm              # Pure greedy OLC reduction engine
 │   ├── Generator.elm              # Synthetic sampling & input parsing
 │   ├── Main.elm                   # Browser.element TEA application wiring
@@ -109,8 +116,6 @@ reconstruct-strings/
     └── StepViewTest.elm           # View model projection & narration tests
 ```
 
----
-
 ## 2.1 Architectural Overview
 
 The application adheres strictly to The Elm Architecture (TEA):
@@ -124,8 +129,11 @@ The application adheres strictly to The Elm Architecture (TEA):
 - **Single Source of Truth**: The top-level `Model` stores the pre-computed
   reduction trace (`Array ReductionEvent`) and the current playback pointer,
   enabling instantaneous timeline scrubbing and predictable state transitions.
-
----
+- **Persistent Diagnostics & Dual Coverage**: The Reference Alignment and
+  Diagnostics panel is persistently visible from step 0. It tracks both
+  **Fragment Coverage** (theoretical coverage of the source spanned by the
+  fragment pool) and **Sequence Coverage** (empirical coverage achieved by
+  assembled contigs), with real-time semantic status feedback.
 
 ## 2.2 Mermaid Component Architecture
 
@@ -137,7 +145,7 @@ flowchart TD
     subgraph CoreDomain["Pure Core Domain"]
         GEN["Generator.elm<br/>(Synthetic Sampling & Parsing)"]
         ASM["Assembler.elm<br/>(Greedy OLC Reduction Engine)"]
-        ALIGN["Alignment.elm<br/>(Reference Alignment & Spans)"]
+        ALIGN["Alignment.elm<br/>(Reference Alignment & Coverage)"]
         VAL["Validation.elm<br/>(Applicative Error Handling)"]
     end
 
@@ -171,12 +179,10 @@ flowchart TD
     ALIGN --> DIFF
 ```
 
----
-
 ## 2.3 Mermaid Sequence Diagram
 
-The sequence diagram depicts user interaction during preset selection,
-reduction trace calculation, and animated playback:
+The sequence diagram depicts user interaction during preset selection, reduction
+trace calculation, and animated playback:
 
 ```mermaid
 sequenceDiagram
@@ -185,6 +191,7 @@ sequenceDiagram
     participant Controls as View.Controls
     participant Main as Main (TEA)
     participant Assembler as Assembler
+    participant Alignment as Alignment
     participant Timer as Time Subscription
     participant Views as View Components
 
@@ -193,8 +200,10 @@ sequenceDiagram
     Main->>Assembler: traceAssembly defaultFragments minOverlap
     Assembler-->>Main: Ok (List ReductionEvent)
     Main->>Main: Store Array ReductionEvent & reset step=0
-    Main->>Views: Render initial pool and step narration
-    Views-->>User: Display Step 1 / N
+    Main->>Alignment: calculateFragmentCoverage source fragments
+    Alignment-->>Main: AlignmentReport (Fragment Coverage, InProgress)
+    Main->>Views: Render initial pool, narration & diagnostic panel
+    Views-->>User: Display Step 1 / N & live Fragment Coverage
 
     User->>Controls: Click "Play" button
     Controls->>Main: TogglePlay
@@ -209,12 +218,12 @@ sequenceDiagram
     end
 
     Note over Main,Timer: When last step is reached, timer pauses automatically
-    Main->>Main: isPlaying = False, compute AlignmentReport
-    Main->>Views: Render completion status & coverage diff
-    Views-->>User: Display final contig & diagnostic badge
+    Main->>Main: isPlaying = False
+    Main->>Alignment: alignAssemblyToSource source fragments contigs
+    Alignment-->>Main: Final AlignmentReport (Dual Coverage, DiagnosticStatus)
+    Main->>Views: Render completion status & aligned contig diff
+    Views-->>User: Display final contigs & diagnostic badge
 ```
-
----
 
 ## 3. Links to Related Projects
 
@@ -226,11 +235,9 @@ reconstruction and greedy Overlap-Layout-Consensus algorithms:
    Interactive web application built with TypeScript and HTML5 Canvas.
 
 2. **Haskell Reference Implementation**:
-   <https://github.com/frankhjung/haskell-reconstruct-strings>
-   High-performance compiled CLI assembler and pure functional reference
-   implementation used for differential parity verification.
-
----
+   <https://github.com/frankhjung/haskell-reconstruct-strings> High-performance
+   compiled CLI assembler and pure functional reference implementation used for
+   differential parity verification.
 
 ## License
 

@@ -10,6 +10,7 @@ import Alignment
     exposing
         ( DiagnosticStatus(..)
         , alignContigsToSource
+        , calculateFragmentCoverage
         , calculateSpans
         , findAllOccurrences
         , findBestWindow
@@ -136,5 +137,70 @@ suite =
                     in
                     report.diagnosticStatus
                         |> Expect.equal MisassemblyDetected
+            ]
+        , describe "calculateFragmentCoverage"
+            [ test "computes 100% coverage across exact fragment pool" <|
+                \_ ->
+                    let
+                        frags =
+                            [ "ATGG", "GGCGT", "CGTG", "TGCA" ]
+
+                        report =
+                            calculateFragmentCoverage "ATGGCGTGCA" frags
+                    in
+                    Expect.all
+                        [ \_ ->
+                            report.diagnosticStatus
+                                |> Expect.equal InProgress
+                        , \_ ->
+                            report.coveragePercent
+                                |> Expect.within (Expect.Absolute 0.01) 100.0
+                        , \_ ->
+                            report.uncoveredSpans
+                                |> Expect.equal []
+                        , \_ ->
+                            report.alignments
+                                |> Expect.equal []
+                        ]
+                        ()
+            , test "detects uncovered gaps between disjoint fragments" <|
+                \_ ->
+                    let
+                        frags =
+                            [ "ATGG", "TGCA" ]
+
+                        report =
+                            calculateFragmentCoverage "ATGGCGTGCA" frags
+                    in
+                    Expect.all
+                        [ \_ ->
+                            report.diagnosticStatus
+                                |> Expect.equal InProgress
+                        , \_ ->
+                            report.coveragePercent
+                                |> Expect.within (Expect.Absolute 0.01) 80.0
+                        , \_ ->
+                            report.uncoveredSpans
+                                |> Expect.equal [ { start = 4, end = 6 } ]
+                        ]
+                        ()
+            , test "returns 0% coverage on empty fragment pool" <|
+                \_ ->
+                    let
+                        report =
+                            calculateFragmentCoverage "ATGGCGTGCA" []
+                    in
+                    Expect.all
+                        [ \_ ->
+                            report.diagnosticStatus
+                                |> Expect.equal InProgress
+                        , \_ ->
+                            report.coveragePercent
+                                |> Expect.within (Expect.Absolute 0.01) 0.0
+                        , \_ ->
+                            report.alignments
+                                |> Expect.equal []
+                        ]
+                        ()
             ]
         ]

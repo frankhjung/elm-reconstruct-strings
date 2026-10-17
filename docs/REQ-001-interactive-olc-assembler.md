@@ -78,28 +78,38 @@ modelling integrity, and responsive rendering across views:
    valid terminal state with coverage gaps. This distinction prevents the app
    from conflating invalid configuration with the legitimate outcome of an exact
    overlap reduction.
-4. **Reference alignment lifecycle**: reference alignment (`Alignment.elm`) and
-   the Diff view are restricted to terminal `StageDone` contigs. During
-   intermediate playback steps, an in-progress placeholder card is displayed,
-   eliminating redundant $O(m \cdot L)$ calculations during 200 ms animation
-   ticks and avoiding premature misassembly diagnostics while fragments merge.
+4. **Reference alignment lifecycle and persistent fragment coverage**:
+   reference alignment (`Alignment.elm`) and the Diff view are displayed
+   continuously across all steps. When reduction is active or contigs have
+   not yet formed (`Contigs Reconstructed: 0`), the view calculates and
+   displays fragment coverage of the reference sequence via
+   `calculateFragmentCoverage`. Upon reaching terminal `StageDone`, contig
+   alignment is evaluated via `alignContigsToSource`.
 5. **Parity verification prerequisites**: `make parity` and `make ci` strictly
    require the sibling reference repository at
    `~/dev/haskell/reconstruct-strings`, enforcing direct differential parity
    against the canonical Haskell binary.
 6. **Diagnostic status modelling**: `Alignment.elm` owns an explicit
-   `DiagnosticStatus` algebraic data type (`PerfectReconstruction`,
-   `PartialAssembly`, `FragmentedAssembly`, `MisassemblyDetected`) with strict
-   domain evaluation precedence: `MisassemblyDetected` > `FragmentedAssembly` >
-   `PartialAssembly` > `PerfectReconstruction`.
+   `DiagnosticStatus` algebraic data type (`InProgress`,
+   `PerfectReconstruction`, `PartialAssembly`, `FragmentedAssembly`,
+   `MisassemblyDetected`) with strict domain evaluation precedence:
+   `MisassemblyDetected` > `FragmentedAssembly` > `PartialAssembly` >
+   `PerfectReconstruction`, with `InProgress` representing active
+   reduction prior to terminal contig formation.
 7. **Cumulative removed fragment tracking**: `ReductionSession` accumulates all
    removed fragments (`List RemovedFragment`) across reduction stages, ensuring
    that `StepViewModel` and the pool view retain visibility of both active
    fragments and filtered/duplicate cards throughout the timeline.
 8. **Curated presets and deterministic deep-linking**: all four presets,
    including Preset 2 (English Pangram), provide curated `defaultFragments`.
-   This ensures instantaneous, deterministic initialisation and reproducible URL
-   query parameter deep-linking (`?preset=<idx>&step=<idx>`).
+   This ensures instantaneous, deterministic initialisation and reproducible
+   URL query parameter deep-linking (`?preset=<idx>&step=<idx>`).
+9. **Unified diagnostic status feedback**: the separate top banner for
+   reconstruction outcomes is eliminated in favour of updating the
+   **Diagnostic Status** metric card directly with semantic colour styling
+   (green for perfect, amber for partial, blue for fragmented, red for
+   misassembly, cyan for in progress), integrating status labels and
+   descriptions into a single cohesive card.
 
 ## Scope and Non-Goals
 
@@ -303,7 +313,9 @@ sequenceDiagram
         Random-->>Main: GotRandomFragments source minOverlap fragments
         Main->>Asm: traceAssembly fragments minOverlap
         Asm-->>Main: Ok (Array ReductionEvent)
-        Main->>Views: view model (step 0)
+        Main->>Align: calculateFragmentCoverage source fragments
+        Align-->>Main: AlignmentReport (InProgress, 0 contigs)
+        Main->>Views: view model + Diff view (step 0 fragment coverage)
     else Validation fails
         Main->>Controls: Render ValidationError banner
     end
@@ -312,13 +324,13 @@ sequenceDiagram
     Controls->>Main: TogglePlay
     loop Every stepDelayMs while isPlaying
         Random->>Main: Tick posix
-        Main->>Views: projectStepView currentEvent
+        Main->>Views: projectStepView currentEvent + Diff view
         Views-->>User: Patch DOM via Html.Lazy (playback in progress)
     end
     Note over Main,Align: On terminal event (StageDone)
     Main->>Align: alignContigsToSource source terminalContigs
-    Align-->>Main: AlignmentReport
-    Main->>Views: Render Diff view with diagnosticStatus
+    Align-->>Main: AlignmentReport (terminal diagnosticStatus)
+    Main->>Views: Render Diff view with assembled contigs
     Views-->>User: Patch DOM via Html.Lazy (terminal alignment)
 ```
 
@@ -609,6 +621,7 @@ module Alignment exposing
     , Span
     , WindowMatch
     , alignContigsToSource
+    , calculateFragmentCoverage
     , calculateSpans
     , findAllOccurrences
     , findBestWindow
@@ -616,7 +629,8 @@ module Alignment exposing
 
 
 type DiagnosticStatus
-    = PerfectReconstruction
+    = InProgress
+    | PerfectReconstruction
     | PartialAssembly
     | FragmentedAssembly
     | MisassemblyDetected
@@ -644,6 +658,10 @@ Key functions:
 - `calculateSpans : List Bool -> { coveredSpans : List Span, uncoveredSpans :
   List Span }` — Pure single-pass fold converting boolean coverage flags into
   contiguous half-open `[start, end)` intervals.
+- `calculateFragmentCoverage : String -> List String -> AlignmentReport` —
+  Calculates reference sequence character coverage from the initial fragment
+  pool prior to contig assembly, assigning `InProgress` status and setting
+  `alignments` to `[]` (`Contigs Reconstructed: 0`).
 - `alignContigsToSource : String -> List String -> AlignmentReport` —
   Aligns each contig against `source` (preferring exact occurrences that cover
   newly uncovered positions, falling back to sliding windows with $\ge \lfloor
@@ -719,19 +737,20 @@ cells (`char-cell prefix-char`, `char-cell suffix-char`, `char-cell overlap`,
 
 #### [NEW] src/View/Diff.elm
 
-Stateless view module rendering `#diff-container` from `AlignmentReport` upon
-reduction completion (`StageDone`). When reduction is in progress, renders an
-in-progress placeholder card:
+Stateless view module rendering `#diff-container` from `AlignmentReport` across
+all assembly steps:
 
-- Stacked alignment rows (`Source`, `Contig k`, `Chimera k`).
+- Stacked alignment rows (`Reference`, `Contig k`, `Chimera k`). When contigs
+  have not yet formed (`Contigs Reconstructed: 0`), renders a placeholder
+  `(None reconstructed yet (assembly in progress))` row beneath `Reference`.
 - Colour legend (`Exact Match`, `Mismatch / Error`, `Uncovered Gap`).
-- Metric cards (`Assembly Status`, `Sequence Coverage`, `Contigs Reconstructed`)
-  with deterministic fixed-one-decimal formatting (`formatPercent : Float ->
-  String`).
-- Diagnostic summary banner derived directly from
-  `AlignmentReport.diagnosticStatus` (`PERFECT RECONSTRUCTION`,
-  `PARTIAL ASSEMBLY`, `MISASSEMBLY DETECTED`, or `FRAGMENTED ASSEMBLY`),
-  memoised via `Html.Lazy.lazy`.
+- Metric cards (`Diagnostic Status`, `Sequence Coverage`, `Contigs
+  Reconstructed`) with deterministic fixed-one-decimal formatting
+  (`formatPercent : Float -> String`).
+- Diagnostic Status metric card incorporates contextual colour feedback directly
+  (`.status-perfect`, `.status-partial`, `.status-fragmented`,
+  `.status-misassembly`, `.status-in-progress`), eliminating the redundant top
+  banner.
 
 ### Application State Layer (`src/Main.elm`)
 
@@ -842,6 +861,46 @@ pure-function flags into `dist/elm.min.js`, and copying `static/*` to `dist/`),
    (strictly requiring the reference repository at
    `~/dev/haskell/reconstruct-strings`).
 
+## Additional Requirements: Alignment & Diagnostics Enhancements
+
+### REQ-007: Persistent Reference Alignment & Fragment Coverage
+
+1. **Persistent Visibility**: The "Reference Alignment & Diagnostics" panel
+   must remain visible across all application lifecycle states (initialisation,
+   interactive stepping, automated playback, and completion), eliminating
+   blocking placeholder screens.
+2. **Fragment Coverage Calculation**: When contigs have not yet assembled
+   (`Contigs Reconstructed: 0`), the application calculates character coverage
+   of the ground-truth sequence directly from the fragment pool via
+   `Alignment.calculateFragmentCoverage`.
+3. **Reference Row Highlighting**: Each character in the `Reference` row must
+   indicate whether it is covered by at least one fragment (`diff-char-covered`,
+   green) or represents an uncovered gap (`diff-char-uncovered`, grey).
+4. **Empty Contigs Narration**: While reduction is in progress, the contigs
+   theatre displays a `(None reconstructed yet (assembly in progress))` note
+   beneath the reference sequence until terminal contigs are assembled.
+
+### REQ-008: Unified Diagnostic Status Metric Feedback
+
+1. **Elimination of Redundant Banner**: The separate top banner line for
+   reconstruction outcomes is removed to conserve vertical space and streamline
+   presentation.
+2. **Contextual Metric Card Styling**: The `Diagnostic Status` metric card
+   incorporates semantic colour feedback directly:
+   - **Green** (`status-perfect`): `PERFECT RECONSTRUCTION` (100% exact single
+     contig coverage).
+   - **Amber / Orange** (`status-partial`): `PARTIAL ASSEMBLY` (single exact
+     contig with < 100% coverage).
+   - **Blue** (`status-fragmented`): `FRAGMENTED ASSEMBLY` (multiple disjoint
+     exact contigs).
+   - **Rose / Red** (`status-misassembly`): `MISASSEMBLY DETECTED` (mismatch,
+     chimera, or unaligned contigs).
+   - **Cyan / Sky** (`status-in-progress`): `IN PROGRESS` (active assembly
+     showing fragment coverage).
+3. **Integrated Subtitle Description**: Descriptive narrative text is embedded
+   within the metric card (`.metric-desc`), maintaining clean typographic
+   hierarchy without visual clutter.
+
 ## Verification Plan
 
 ### Automated Tests
@@ -875,5 +934,7 @@ make ci        # Run full lint, test, build, and parity suite
 6. Test URL query parameters (`http://localhost:8080/?preset=1&step=2`) to
    confirm deep-linking into a specific preset and step index.
 
-[hs-repo]: https://github.com/frankhjung/haskell-reconstruct-strings/blob/main/README.md
-[ts-repo]: https://github.com/frankhjung/typescript-reconstruct-strings-web/blob/main/README.md
+[hs-repo]:
+  https://github.com/frankhjung/haskell-reconstruct-strings
+[ts-repo]:
+  https://github.com/frankhjung/typescript-reconstruct-strings-web
