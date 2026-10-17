@@ -9,17 +9,17 @@
 ## Goal Description
 
 Build a client-side interactive web application in Elm 0.19.1 at
-`/home/frank/dev/elm/reconstruct-strings` that animates the reconstruction of
-random string fragments using the Overlap-Layout-Consensus (OLC) greedy
-reduction protocol and verifies assembled contigs against a ground-truth
-reference sequence.
+`~/dev/elm/reconstruct-strings` that animates the reconstruction of random
+string fragments using the Overlap-Layout-Consensus (OLC) greedy reduction
+protocol and verifies assembled contigs against a ground-truth reference
+sequence.
 
 The application serves as both an educational visualisation workbench and an
 interactive verification tool. Given a source sequence and generation
 parameters, the application:
 
-1. Synthesises random overlapping fragments from the source sequence via
-   Elm's pure `Random.Generator` subsystem.
+1. Synthesises random overlapping fragments from the source sequence via Elm's
+   pure `Random.Generator` subsystem.
 2. Animates the stepwise greedy overlap reduction process in the browser with
    full timeline scrubbing and playback controls.
 3. Highlights matching suffix-prefix overlaps with distinct colour coding in an
@@ -44,16 +44,62 @@ parameters, the application:
 
 ## User Review Required
 
-> [!IMPORTANT] **Approval before writing to target repository.**
-> Following `/plan` mode guidelines, the user has requested saving the
-> implementation plan directly to `docs/REQ-001-interactive-olc-assembler.md`
-> in `/home/frank/dev/elm/reconstruct-strings`.
+### Approval before writing to target repository
 
-> [!IMPORTANT] **External repository and tool access during implementation.**
-> When executing the implementation tracks, the build and verification workflow
-> will require network access for `npm install` and `elm make` package caching,
-> plus read/execute access to `/home/frank/dev/haskell/reconstruct-strings` for
-> running `make parity`.
+> [!IMPORTANT] Following `/plan` mode guidelines, the user has requested saving
+> the implementation plan directly to
+> `docs/REQ-001-interactive-olc-assembler.md` in
+> `~/dev/elm/reconstruct-strings`.
+
+### External repository and tool access during implementation
+
+> [!IMPORTANT] When executing the implementation tracks, the build and
+> verification workflow will require network access for `npm install` and
+> `elm make` package caching, plus read/execute access to
+> `~/dev/haskell/reconstruct-strings` for running `make parity`.
+
+## Requirements Review: Tightened Decisions
+
+The plan is structurally sound, but eight requirements were settled during
+interactive requirements grilling to guarantee deterministic behaviour, domain
+modelling integrity, and responsive rendering across views:
+
+1. **Terminal state semantics**: a valid fragment pool is allowed to reach a
+   state with no remaining legal overlap, especially when the generated inputs
+   are sparse or intentionally non-assembling. In that case the application must
+   treat the reduction as a completed run with remaining fragments reported as
+   uncovered contigs or isolated fragments, not as a fatal error.
+2. **Ownership boundaries**: the pure `Assembler` domain owns validation,
+   overlap selection, containment filtering, and replayable reduction state. The
+   UI layer owns playback timing, timeline scrubbing, and human-readable
+   narration only.
+3. **Failure modes**: malformed user input or impossible generator parameters
+   are user-visible validation errors; absolute algorithmic impossibility is a
+   valid terminal state with coverage gaps. This distinction prevents the app
+   from conflating invalid configuration with the legitimate outcome of an exact
+   overlap reduction.
+4. **Reference alignment lifecycle**: reference alignment (`Alignment.elm`) and
+   the Diff view are restricted to terminal `StageDone` contigs. During
+   intermediate playback steps, an in-progress placeholder card is displayed,
+   eliminating redundant $O(m \cdot L)$ calculations during 200 ms animation
+   ticks and avoiding premature misassembly diagnostics while fragments merge.
+5. **Parity verification prerequisites**: `make parity` and `make ci` strictly
+   require the sibling reference repository at
+   `~/dev/haskell/reconstruct-strings`, enforcing direct differential parity
+   against the canonical Haskell binary.
+6. **Diagnostic status modelling**: `Alignment.elm` owns an explicit
+   `DiagnosticStatus` algebraic data type (`PerfectReconstruction`,
+   `PartialAssembly`, `FragmentedAssembly`, `MisassemblyDetected`) with strict
+   domain evaluation precedence: `MisassemblyDetected` > `FragmentedAssembly` >
+   `PartialAssembly` > `PerfectReconstruction`.
+7. **Cumulative removed fragment tracking**: `ReductionSession` accumulates all
+   removed fragments (`List RemovedFragment`) across reduction stages, ensuring
+   that `StepViewModel` and the pool view retain visibility of both active
+   fragments and filtered/duplicate cards throughout the timeline.
+8. **Curated presets and deterministic deep-linking**: all four presets,
+   including Preset 2 (English Pangram), provide curated `defaultFragments`.
+   This ensures instantaneous, deterministic initialisation and reproducible URL
+   query parameter deep-linking (`?preset=<idx>&step=<idx>`).
 
 ## Scope and Non-Goals
 
@@ -63,8 +109,8 @@ parameters, the application:
 - Random fragment generation from configurable parameters (`source`, `n`, `a`,
   `b`, `m`) using `elm/random`.
 - Manual fragment pool editor supporting newline- and comma-delimited inputs.
-- Total, deterministic client-side execution of the OLC greedy overlap
-  reduction algorithm matching the Haskell reference implementation.
+- Total, deterministic client-side execution of the OLC greedy overlap reduction
+  algorithm matching the Haskell reference implementation.
 - Pure data-oriented reduction trace (`ReductionEvent` and `ReductionSession`)
   strictly decoupled from human-readable presentation narration (`REQ-002`,
   `REQ-006`).
@@ -76,8 +122,8 @@ parameters, the application:
   Reset, timeline scrubber, and speed slider (`200 ms` to `2000 ms`).
 - Four curated presets: DNA Sequence, Alphabet Sequence, English Pangram, and
   Simple Test.
-- URL query parameter initialisation (`?preset=<index>&step=<index>`) passed
-  via startup flags and decoded safely with `Json.Decode`.
+- URL query parameter initialisation (`?preset=<index>&step=<index>`) passed via
+  startup flags and decoded safely with `Json.Decode`.
 - Production bundle in `dist/` (`index.html`, `style.css`, and Terser-minified
   `elm.min.js`) orchestrated via `Makefile`.
 - Automated verification via `elm-format`, `elm-review`, `elm-test` (unit and
@@ -108,8 +154,8 @@ The generator accepts five configurable parameters guarded by resource bounds:
 3. **`minLength`** ($a$, `Int`): Minimum fragment length, $2 \le a \le L$.
 4. **`maxLength`** ($b$, `Int`): Maximum fragment length, $a \le b$. Effective
    maximum length is clamped to $\min(b, L)$.
-5. **`fragmentCount`** ($m$, `Int`): Number of synthetic fragments to sample,
-   $2 \le m \le 500$ (`maxFragmentCount`).
+5. **`fragmentCount`** ($m$, `Int`): Number of synthetic fragments to sample, $2
+   \le m \le 500$ (`maxFragmentCount`).
 
 ### Synthetic Fragment Sampling
 
@@ -133,9 +179,9 @@ the Haskell reference implementation:
    - Rejects any empty fragment (`""`) with `Err EmptyFragmentEncountered`.
 2. **Pre-processing Deduplication and Containment Filtering:**
    - Collapses exact duplicate fragments to a single representative while
-     recording `RemovedFragment` entries with `Duplicate copies`
-     ($copies \ge 1$) when the surviving representative is not contained in a
-     longer fragment.
+     recording `RemovedFragment` entries with `Duplicate copies` ($copies \ge
+     1$) when the surviving representative is not contained in a longer
+     fragment.
    - Eliminates any fragment that is a proper substring of another fragment in
      the pool (`s1 /= s2 && String.contains s1 s2`), recording `Contained`.
 3. **Pairwise Overlap Calculation (`calculateOverlap`):**
@@ -165,8 +211,8 @@ the Haskell reference implementation:
 ### Architectural Overview
 
 The application follows The Elm Architecture (TEA) with a strict separation
-between the pure domain core, application state transitions, and stateless
-view projections:
+between the pure domain core, application state transitions, and stateless view
+projections:
 
 ```mermaid
 flowchart TD
@@ -265,12 +311,14 @@ sequenceDiagram
     loop Every stepDelayMs while isPlaying
         Random->>Main: Tick posix
         Main->>Views: projectStepView currentEvent
-        Main->>Align: alignContigsToSource source stepView.pool
-        Views-->>User: Patch DOM via Html.Lazy
+        Views-->>User: Patch DOM via Html.Lazy (playback in progress)
     end
+    Note over Main,Align: On terminal event (StageDone)
+    Main->>Align: alignContigsToSource source terminalContigs
+    Align-->>Main: AlignmentReport
+    Main->>Views: Render Diff view with diagnosticStatus
+    Views-->>User: Patch DOM via Html.Lazy (terminal alignment)
 ```
-
----
 
 ## Proposed Changes
 
@@ -313,7 +361,7 @@ production and `elm-explorations/test` for testing:
 
 #### [NEW] package.json
 
-Development dependencies matching `/home/frank/dev/elm/wordpuzzle`:
+Development dependencies matching `~/dev/elm/wordpuzzle`:
 
 ```json
 {
@@ -355,17 +403,13 @@ Static analysis configuration enforcing dead-code and unused-item elimination:
 - `LICENSE`: BSD-3-Clause licence matching the Haskell and TypeScript
   repositories.
 
----
-
 ### Pure Domain Layer
 
 #### [NEW] src/Validation.elm
 
 Applicative error accumulator (`type alias Validation err a = Result (List err)
 a`) providing `succeed`, `fail`, `andMap`, and `keep`, ported directly from
-`/home/frank/dev/elm/wordpuzzle/src/Validation.elm`.
-
----
+`~/dev/elm/wordpuzzle/src/Validation.elm`.
 
 #### [NEW] src/Assembler.elm
 
@@ -476,17 +520,17 @@ type alias ReductionSession =
     { pool : List String
     , minOverlap : OverlapLength
     , stage : SessionStage
+    , removed : List RemovedFragment
     }
 ```
 
 Key functions in `src/Assembler.elm`:
 
 - `calculateOverlap : String -> String -> OverlapLength -> Maybe OverlapLength`
-  — Evaluates candidate lengths from `min (String.length prefix)
-  (String.length suffix)` down to `minOverlap`, returning `Just len` for the
-  first exact match where `len < max (String.length prefix)
-  (String.length suffix)` and `String.right len prefix == String.left len
-  suffix`.
+  — Evaluates candidate lengths from `min (String.length prefix) (String.length
+  suffix)` down to `minOverlap`, returning `Just len` for the first exact match
+  where `len < max (String.length prefix) (String.length
+  suffix)` and `String.right len prefix == String.left len suffix`.
 - `findBestOverlap : List String -> OverlapLength -> Maybe OverlapCandidate` —
   Evaluates all ordered pairs of distinct fragments and selects the minimum
   under `compareCandidates` (descending `matchLength`, ascending `prefix`,
@@ -502,11 +546,11 @@ Key functions in `src/Assembler.elm`:
   String)` — Convenience wrapper for string lists and parity workers.
 - `startSession : List String -> OverlapLength -> Result AssemblyError
   ReductionSession` and `stepSession : ReductionSession -> ( ReductionSession,
-  ReductionEvent )` — Pure unfold transitions.
+  ReductionEvent )` — Pure unfold transitions; `startSession` initialises
+  `removed = []` and `stepSession` accumulates newly removed fragments into
+  `session.removed` during `StageInit` and `StageDynamicFilter`.
 - `traceAssembly : List String -> OverlapLength -> Result AssemblyError (List
   ReductionEvent)` — Unfolds `stepSession` tail-recursively until `StageDone`.
-
----
 
 #### [NEW] src/Generator.elm
 
@@ -544,13 +588,11 @@ Key design details:
   `maxLength`, `fragmentCount`) and validates all bounds using `Validation.elm`
   so users see all form errors simultaneously.
 - `fragmentsGenerator : GeneratorParams -> Random.Generator (List String)` uses
-  `Random.list params.fragmentCount (singleFragmentGenerator params)` where
-  each fragment samples `len` via `Random.int params.minLength effectiveMax`
-  and `offset` via `Random.int 0 (sourceLen - len)`.
-- `parseFragments : String -> List String` splits on newlines and commas,
-  trims whitespace, and drops empty entries.
-
----
+  `Random.list params.fragmentCount (singleFragmentGenerator params)` where each
+  fragment samples `len` via `Random.int params.minLength effectiveMax` and
+  `offset` via `Random.int 0 (sourceLen - len)`.
+- `parseFragments : String -> List String` splits on newlines and commas, trims
+  whitespace, and drops empty entries.
 
 #### [NEW] src/Alignment.elm
 
@@ -560,6 +602,7 @@ Pure reference alignment and interval arithmetic (`REQ-005`):
 module Alignment exposing
     ( AlignmentReport
     , ContigAlignment
+    , DiagnosticStatus(..)
     , Span
     , WindowMatch
     , alignContigsToSource
@@ -567,6 +610,24 @@ module Alignment exposing
     , findAllOccurrences
     , findBestWindow
     )
+
+
+type DiagnosticStatus
+    = PerfectReconstruction
+    | PartialAssembly
+    | FragmentedAssembly
+    | MisassemblyDetected
+
+
+type alias AlignmentReport =
+    { alignments : List ContigAlignment
+    , unalignedContigs : List String
+    , coveredPositions : List Int
+    , coveragePercent : Float
+    , coveredSpans : List Span
+    , uncoveredSpans : List Span
+    , diagnosticStatus : DiagnosticStatus
+    }
 ```
 
 Key functions:
@@ -580,30 +641,35 @@ Key functions:
 - `calculateSpans : List Bool -> { coveredSpans : List Span, uncoveredSpans :
   List Span }` — Pure single-pass fold converting boolean coverage flags into
   contiguous half-open `[start, end)` intervals.
-- `alignContigsToSource : String -> List String -> AlignmentReport` — Aligns
-  each contig against `source` (preferring exact occurrences that cover newly
-  uncovered positions, falling back to sliding windows with $\ge \lfloor
-  |contig| / 2 \rfloor$ matches, or classifying as `unalignedContigs`), and
-  computes `coveredPositions`, `coveragePercent`, `coveredSpans`, and
-  `uncoveredSpans` without any presentation strings.
-
----
+- `alignContigsToSource : String -> List String -> AlignmentReport` —
+  Aligns each contig against `source` (preferring exact occurrences that cover
+  newly uncovered positions, falling back to sliding windows with $\ge \lfloor
+  |contig| / 2 \rfloor$ matches, or classifying as `unalignedContigs`), computes
+  coverage spans, and evaluates `diagnosticStatus` under strict domain
+  precedence:
+  1. `MisassemblyDetected`: If any contig has mismatches against `source`
+     (chimeric join) or is placed in `unalignedContigs`.
+  2. `FragmentedAssembly`: If all contigs match `source` exactly, but multiple
+     disjoint contigs remain (`List.length contigs > 1`).
+  3. `PartialAssembly`: If exactly one contig matches `source` exactly, but
+     `coveragePercent < 100.0`.
+  4. `PerfectReconstruction`: If exactly one contig matches `source` exactly
+     with `coveragePercent == 100.0`.
 
 #### [NEW] src/Presets.elm
 
 Curated preset configurations matching `src/presets.ts`:
 
-1. **DNA Sequence (Toy Genome):** `source = "ATGGCGTGCA"`, $n = 2, a = 4,
-   b = 6, m = 6$, `defaultFragments = Just [ "ATGGC", "GGCGT", "CGTGCA" ]`.
-2. **Alphabet Sequence (Deterministic):** `source = "ABCDEFGHIJK"`, $n = 2,
-   a = 3, b = 5, m = 6$, `defaultFragments = Just [ "ABCDE", "CDEFG", "EFGHI",
+1. **DNA Sequence (Toy Genome):** `source = "ATGGCGTGCA"`, $n = 2, a = 4, b = 6,
+   m = 6$, `defaultFragments = Just [ "ATGGC", "GGCGT", "CGTGCA" ]`.
+2. **Alphabet Sequence (Deterministic):** `source = "ABCDEFGHIJK"`, $n = 2, a =
+   3, b = 5, m = 6$, `defaultFragments = Just [ "ABCDE", "CDEFG", "EFGHI",
    "GHIJK" ]`.
-3. **English Pangram (Sentence):** `source = "THE QUICK BROWN FOX JUMPS OVER
-   THE LAZY DOG"`, $n = 3, a = 8, b = 15, m = 12$, `defaultFragments = Nothing`.
+3. **English Pangram (Sentence):** `source = "THE QUICK BROWN FOX JUMPS OVER THE
+   LAZY DOG"`, $n = 3, a = 8, b = 15, m = 12$, `defaultFragments = Just [ "THE
+   QUICK BROWN", "BROWN FOX JUMPS", "JUMPS OVER THE", "OVER THE LAZY DOG" ]`.
 4. **Simple Test (Example):** `source = "ABCDE"`, $n = 2, a = 3, b = 3, m = 3$,
    `defaultFragments = Just [ "ABC", "BCD", "CDE" ]`.
-
----
 
 ### Presentation Layer (`src/View/`)
 
@@ -620,8 +686,6 @@ module View.StepView exposing
     )
 ```
 
----
-
 #### [NEW] src/View/Controls.elm
 
 Stateless view module rendering the left-hand control panel and playback bar:
@@ -637,15 +701,11 @@ Stateless view module rendering the left-hand control panel and playback bar:
   `delayToSlider` conversions (`200 ms` to `2000 ms`).
 - Status explanation banner (`#status-explanation`) and validation error alert.
 
----
-
 #### [NEW] src/View/Pool.elm
 
 Stateless view module rendering `#pool-grid` with `fragment-card` elements and
 contextual badges (`Prefix`, `Suffix`, `Merged`, `Contained`, `Duplicate ×k`),
 memoised via `Html.Lazy.lazy`.
-
----
 
 #### [NEW] src/View/MergeTheatre.elm
 
@@ -654,22 +714,21 @@ cells (`char-cell prefix-char`, `char-cell suffix-char`, `char-cell overlap`,
 `char-cell gap`) for `Prefix`, `Suffix`, and `Merged` rows, memoised via
 `Html.Lazy.lazy`.
 
----
-
 #### [NEW] src/View/Diff.elm
 
-Stateless view module rendering `#diff-container` from `AlignmentReport`:
+Stateless view module rendering `#diff-container` from `AlignmentReport` upon
+reduction completion (`StageDone`). When reduction is in progress, renders an
+in-progress placeholder card:
 
 - Stacked alignment rows (`Source`, `Contig k`, `Chimera k`).
 - Colour legend (`Exact Match`, `Mismatch / Error`, `Uncovered Gap`).
 - Metric cards (`Assembly Status`, `Sequence Coverage`, `Contigs Reconstructed`)
   with deterministic fixed-one-decimal formatting (`formatPercent : Float ->
   String`).
-- Diagnostic summary banner (`PERFECT RECONSTRUCTION`, `PARTIAL ASSEMBLY`,
-  `MISASSEMBLY DETECTED`, or `FRAGMENTED ASSEMBLY`), memoised via
-  `Html.Lazy.lazy`.
-
----
+- Diagnostic summary banner derived directly from
+  `AlignmentReport.diagnosticStatus` (`PERFECT RECONSTRUCTION`,
+  `PARTIAL ASSEMBLY`, `MISASSEMBLY DETECTED`, or `FRAGMENTED ASSEMBLY`),
+  memoised via `Html.Lazy.lazy`.
 
 ### Application State Layer (`src/Main.elm`)
 
@@ -708,8 +767,6 @@ Key state invariants enforced by `Main.update`:
   is cleared to `Array.empty` (per `REQ-004` settled decision 1), and the
   validation error list is displayed.
 
----
-
 ### Static Assets, Build Tooling, and Verification Suite
 
 #### [NEW] static/index.html and static/style.css
@@ -718,16 +775,16 @@ Key state invariants enforced by `Main.update`:
   parameters from `window.location.search` and passes them as `flags` into
   `Elm.Main.init({ node: document.getElementById('app'), flags })`.
 - `static/style.css`: Ports the dark-slate responsive CSS grid and colour token
-  system from `/home/frank/dev/ts/reconstruct-strings-web/src/ui/styles.css`.
+  system from `~/dev/ts/reconstruct-strings-web/src/ui/styles.css`.
 
 #### [NEW] Makefile
 
-Follows the reference `Makefile` from `/home/frank/dev/elm/wordpuzzle/Makefile`
-with `.DELETE_ON_ERROR:`, `SHELL := bash`, `.SHELLFLAGS := -euo pipefail -c`,
-and targets: `default`, `help`, `deps`, `format`, `check`, `lint`, `test`,
-`build` (compiling `dist/elm.js` with `elm make --optimize`, minifying with
-`terser` pure-function flags into `dist/elm.min.js`, and copying `static/*` to
-`dist/`), `run`, `parity`, `ci`, `clean`, and `distclean`.
+Follows the reference `Makefile` from `~/dev/elm/wordpuzzle/Makefile` with
+`.DELETE_ON_ERROR:`, `SHELL := bash`, `.SHELLFLAGS := -euo pipefail -c`, and
+targets: `default`, `help`, `deps`, `format`, `check`, `lint`, `test`, `build`
+(compiling `dist/elm.js` with `elm make --optimize`, minifying with `terser`
+pure-function flags into `dist/elm.min.js`, and copying `static/*` to `dist/`),
+`run`, `parity`, `ci`, `clean`, and `distclean`.
 
 #### [NEW] Automated Test Suite (`tests/`)
 
@@ -762,16 +819,16 @@ and targets: `default`, `help`, `deps`, `format`, `check`, `lint`, `test`,
 7. `tests/ParityWorker.elm`, `scripts/parity.js`, and `scripts/parity.sh`:
    Headless `Platform.worker` and Node runner executing differential parity
    tests between `Assembler.assembleStrings` and the Haskell
-   `reconstruct-strings` executable across curated and random test corpora.
-
----
+   `reconstruct-strings` executable across curated and random test corpora
+   (strictly requiring the reference repository at
+   `~/dev/haskell/reconstruct-strings`).
 
 ## Verification Plan
 
 ### Automated Tests
 
-Once implemented in `/home/frank/dev/elm/reconstruct-strings`, run the full
-verification pipeline via GNU Make:
+Once implemented in `~/dev/elm/reconstruct-strings`, run the full verification
+pipeline via GNU Make:
 
 ```bash
 make deps      # Install npm tooling (elm-format, elm-review, elm-test, terser)
@@ -799,5 +856,5 @@ make ci        # Run full lint, test, build, and parity suite
 6. Test URL query parameters (`http://localhost:8080/?preset=1&step=2`) to
    confirm deep-linking into a specific preset and step index.
 
-[hs-repo]: file:///home/frank/dev/haskell/reconstruct-strings/README.md
-[ts-repo]: file:///home/frank/dev/ts/reconstruct-strings-web/README.md
+[hs-repo]: https://github.com/frankhjung/haskell-reconstruct-strings/blob/main/README.md
+[ts-repo]: https://github.com/frankhjung/typescript-reconstruct-strings-web/blob/main/README.md
