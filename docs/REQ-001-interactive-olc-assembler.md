@@ -126,6 +126,8 @@ modelling integrity, and responsive rendering across views:
   startup flags and decoded safely with `Json.Decode`.
 - Production bundle in `dist/` (`index.html`, `style.css`, and Terser-minified
   `elm.min.js`) orchestrated via `Makefile`.
+- Continuous deployment of production assets to GitHub Pages via GitHub Actions
+  (`.github/workflows/pages.yml`).
 - Automated verification via `elm-format`, `elm-review`, `elm-test` (unit and
   fuzz property tests), and differential `make parity` against the Haskell
   binary.
@@ -216,7 +218,7 @@ projections:
 
 ```mermaid
 flowchart TD
-    subgraph Host["Static Assets (dist/)"]
+    subgraph Host["Static Assets (dist/ -> GitHub Pages)"]
         HTML["index.html + style.css"]
         JS["elm.min.js"]
         HTML --> JS
@@ -376,6 +378,7 @@ Development dependencies matching `~/dev/elm/wordpuzzle`:
     "review": "elm-review"
   },
   "devDependencies": {
+    "elm": "^0.19.1-6",
     "elm-format": "^0.8.7",
     "elm-review": "^2.13.1",
     "elm-test": "^0.19.1-revision12",
@@ -773,9 +776,25 @@ Key state invariants enforced by `Main.update`:
 
 - `static/index.html`: Parses optional `?preset=<int>` and `?step=<int>` query
   parameters from `window.location.search` and passes them as `flags` into
-  `Elm.Main.init({ node: document.getElementById('app'), flags })`.
+  `Elm.Main.init({ node: document.getElementById('app'), flags })`. Uses
+  relative asset paths (`style.css`, `elm.min.js`) so the bundle deploys
+  cleanly on both local servers and GitHub Pages repository subpaths.
 - `static/style.css`: Ports the dark-slate responsive CSS grid and colour token
   system from `~/dev/ts/reconstruct-strings-web/src/ui/styles.css`.
+
+#### [NEW] .github/workflows/pages.yml
+
+Continuous deployment pipeline deploying the production bundle to GitHub Pages
+on every push to `main` (and via manual `workflow_dispatch`):
+
+- **Permissions**: `contents: read`, `pages: write`, `id-token: write`.
+- **Concurrency**: `group: pages`, `cancel-in-progress: false` to ensure
+  in-flight deployments finish cleanly.
+- **Build Step**: Checks out code, sets up Node.js 22, installs dependencies,
+  and compiles the minified production bundle via `make build`.
+- **Deploy Step**: Uses official `actions/configure-pages@v5`,
+  `actions/upload-pages-artifact@v3` (`path: dist`), and
+  `actions/deploy-pages@v4` to publish the static site.
 
 #### [NEW] Makefile
 
